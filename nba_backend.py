@@ -5,6 +5,9 @@ from flask_cors import CORS
 import time
 import logging
 import threading
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+from nba_api.stats.library.parameters import Timeout
 
 # Initialize Flask app
 app = Flask(__name__)
@@ -51,6 +54,12 @@ TEAM_NAMES = {
     "1610612766": "Hornets"
 }
 
+# Configure timeout for NBA API
+Timeout.SINGLE_REQUEST_TIMEOUT = 60  # Increase timeout to 60 seconds
+
+# Semaphore for thread safety
+semaphore = threading.Semaphore(1)
+lock = threading.Lock()
 
 # Endpoint: Start live tracking
 @app.route('/api/start-live-tracking', methods=['GET'])
@@ -120,8 +129,13 @@ def get_flagged_rebounds():
 # Function: Get today's games
 def get_today_games():
     try:
+        session = requests.Session()
+        retries = Retry(total=5, backoff_factor=1, status_forcelist=[502, 503, 504])
+        session.mount('https://', HTTPAdapter(max_retries=retries))
+        
         scoreboard = scoreboardv2.ScoreboardV2(day_offset=0)
         games = scoreboard.get_data_frames()[0]
+        
         today_games = []
         for _, game in games.iterrows():
             game_id = game['GAME_ID']
@@ -129,13 +143,14 @@ def get_today_games():
             away_team = game['VISITOR_TEAM_ID']
             game_status = game['GAME_STATUS_TEXT'].strip().lower()
 
-            game_data[game_id] = {
-                'home_team': home_team,
-                'away_team': away_team,
-                'status': 'live' if 'live' in game_status or 'qtr' in game_status else game_status,
-                'last_event': None,
-                'last_updated': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            }
+            with lock:  # Protect shared data
+                game_data[game_id] = {
+                    'home_team': home_team,
+                    'away_team': away_team,
+                    'status': 'live' if 'live' in game_status or 'qtr' in game_status else game_status,
+                    'last_event': None,
+                    'last_updated': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                }
             today_games.append(game_id)
         return today_games
     except Exception as e:
@@ -145,18 +160,20 @@ def get_today_games():
 # Function: Track today's games
 def track_today_games():
     try:
-        today_games = get_today_games()
-        if not today_games:
-            logging.info("No games found for today.")
-            return
-        
-        logging.info(f"Tracking games: {today_games}")
-        while True:
-            active_games = [game_id for game_id in today_games if game_data[game_id]['status'].lower() == 'live']
-            for game_id in active_games:
-                process_game_events(game_id)
-                game_data[game_id]['last_updated'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            time.sleep(30)  # Poll every 30 seconds
+        with semaphore:
+            today_games = get_today_games()
+            if not today_games:
+                logging.info("No games found for today.")
+                return
+            
+            logging.info(f"Tracking games: {today_games}")
+            while True:
+                active_games = [game_id for game_id in today_games if game_data[game_id]['status'].lower() == 'live']
+                for game_id in active_games:
+                    with lock:
+                        process_game_events(game_id)
+                        game_data[game_id]['last_updated'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                time.sleep(30)  # Poll every 30 seconds
     except Exception as e:
         logging.error(f"Error tracking games: {str(e)}")
 
@@ -206,4 +223,3 @@ import os
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))  # Use PORT from the environment or default to 5000
     app.run(port=port, host='0.0.0.0', debug=True)
-
