@@ -59,7 +59,7 @@ def create_session():
     """Create a requests session with retries and timeouts."""
     retry = Retry(
         total=5,
-        backoff_factor=1,
+        backoff_factor=2,  # Wait longer between retries
         allowed_methods=["GET", "POST"],
         status_forcelist=[429, 500, 502, 503, 504]
     )
@@ -67,7 +67,9 @@ def create_session():
     session = requests.Session()
     session.mount("https://", adapter)
     session.mount("http://", adapter)
+    session.timeout = (10, 60)  # Connect timeout: 10s, Read timeout: 60s
     return session
+
 
 
 session = create_session()
@@ -141,6 +143,12 @@ def get_flagged_rebounds():
 # Function: Get today's games
 def get_today_games():
     try:
+        response = session.get('https://stats.nba.com')
+        if response.status_code == 429:  # Too many requests
+            logging.warning("Rate limited by the NBA API. Retrying after delay...")
+            time.sleep(60)  # Wait 1 minute before retrying
+            return []
+        
         scoreboard = scoreboardv2.ScoreboardV2(day_offset=0)
         games = scoreboard.get_data_frames()[0]
         today_games = []
@@ -159,9 +167,13 @@ def get_today_games():
             }
             today_games.append(game_id)
         return today_games
+    except requests.exceptions.RequestException as e:
+        logging.error(f"Request error: {str(e)}")
+        return []
     except Exception as e:
         logging.error(f"Error retrieving today's games: {str(e)}")
         return []
+
 
 # Function: Track today's games
 def track_today_games():
