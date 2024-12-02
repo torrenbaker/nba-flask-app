@@ -6,7 +6,7 @@ import time
 import logging
 import threading
 from requests.adapters import HTTPAdapter
-from requests.packages.urllib3.util.retry import Retry
+from urllib3.util.retry import Retry
 import requests
 
 # Initialize Flask app
@@ -55,21 +55,23 @@ TEAM_NAMES = {
 }
 
 
-# Create a session with retries
 def create_session():
-    session = requests.Session()
+    """Create a requests session with retries and timeouts."""
     retry = Retry(
-        total=5,  # Retry up to 5 times
-        backoff_factor=0.5,  # Exponential backoff
-        status_forcelist=[500, 502, 503, 504],  # Retry on these HTTP status codes
-        method_whitelist=["GET"]  # Retry only on GET requests
+        total=5,
+        backoff_factor=1,
+        allowed_methods=["GET", "POST"],
+        status_forcelist=[429, 500, 502, 503, 504]
     )
     adapter = HTTPAdapter(max_retries=retry)
+    session = requests.Session()
     session.mount("https://", adapter)
     session.mount("http://", adapter)
     return session
 
+
 session = create_session()
+
 
 # Endpoint: Start live tracking
 @app.route('/api/start-live-tracking', methods=['GET'])
@@ -139,7 +141,7 @@ def get_flagged_rebounds():
 # Function: Get today's games
 def get_today_games():
     try:
-        scoreboard = scoreboardv2.ScoreboardV2(day_offset=0, timeout=10)
+        scoreboard = scoreboardv2.ScoreboardV2(day_offset=0)
         games = scoreboard.get_data_frames()[0]
         today_games = []
         for _, game in games.iterrows():
@@ -182,7 +184,7 @@ def track_today_games():
 # Function: Process game events
 def process_game_events(game_id):
     try:
-        pbp = playbyplayv2.PlayByPlayV2(game_id=game_id, timeout=10)
+        pbp = playbyplayv2.PlayByPlayV2(game_id=game_id)
         pbp_data = pbp.get_data_frames()[0]
         last_processed_event = game_data[game_id]['last_event']
 
