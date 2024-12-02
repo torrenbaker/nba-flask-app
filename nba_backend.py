@@ -51,6 +51,7 @@ TEAM_NAMES = {
     "1610612766": "Hornets"
 }
 
+
 # Endpoint: Start live tracking
 @app.route('/api/start-live-tracking', methods=['GET'])
 def start_live_tracking():
@@ -116,23 +117,6 @@ def get_flagged_rebounds():
         logging.error(f"Error fetching flagged rebounds: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
-# Test Endpoint: Manually add a test rebound
-@app.route('/api/test-flagged-rebound', methods=['GET'])
-def test_flagged_rebound():
-    # Simulated test game ID
-    test_game_id = "test_game"
-    
-    # Add a simulated flagged rebound
-    flagged_rebounds.setdefault(test_game_id, []).append({
-        "timestamp": "00:00",
-        "quarter": "1",
-        "description": "Simulated missed rebound",
-        "reason": "Test manual addition"
-    })
-    logging.info(f"Manually added a test flagged rebound for game {test_game_id}.")
-    
-    return jsonify({"message": "Test flagged rebound added."})
-
 # Function: Get today's games
 def get_today_games():
     try:
@@ -192,18 +176,34 @@ def process_game_events(game_id):
 
             # Missed shot detection
             if row['EVENTMSGTYPE'] == 2:  # Missed shot
-                if index + 1 < len(pbp_data):
-                    next_event = pbp_data.iloc[index + 1]
-                    if next_event['EVENTMSGTYPE'] != 4 or 'Team Rebound' in (next_event['HOMEDESCRIPTION'] or next_event['VISITORDESCRIPTION'] or ''):
-                        flagged_rebounds.setdefault(game_id, []).append({
-                            "timestamp": row['PCTIMESTRING'],
-                            "quarter": str(row['PERIOD']),
-                            "description": row['HOMEDESCRIPTION'] or row['VISITORDESCRIPTION'] or "No description",
-                            "reason": "Potential missed rebound - No individual rebound credited"
-                        })
-                        logging.info(f"Flagged missed rebound for game {game_id} at {row['PCTIMESTRING']}")
+                for i in range(index + 1, index + 4):  # Check next 3 events
+                    if i < len(pbp_data):
+                        next_event = pbp_data.iloc[i]
+                        if next_event['EVENTMSGTYPE'] == 4:  # Rebound event
+                            if "Team Rebound" in (next_event['HOMEDESCRIPTION'] or next_event['VISITORDESCRIPTION']):
+                                flagged_rebounds.setdefault(game_id, []).append({
+                                    "timestamp": row['PCTIMESTRING'],
+                                    "quarter": row['PERIOD'],
+                                    "description": row['HOMEDESCRIPTION'] or row['VISITORDESCRIPTION'],
+                                    "reason": "Potential misattribution: Team rebound instead of individual."
+                                })
+                                logging.info(f"Flagged team rebound for game {game_id} at {row['PCTIMESTRING']}")
+                            break
+                else:
+                    # No rebound event found
+                    flagged_rebounds.setdefault(game_id, []).append({
+                        "timestamp": row['PCTIMESTRING'],
+                        "quarter": row['PERIOD'],
+                        "description": row['HOMEDESCRIPTION'] or row['VISITORDESCRIPTION'],
+                        "reason": "Potential missed rebound: No rebound credited."
+                    })
+                    logging.info(f"Flagged missed rebound for game {game_id} at {row['PCTIMESTRING']}")
     except Exception as e:
         logging.error(f"Error processing game {game_id}: {str(e)}")
 
+import os
+
 if __name__ == '__main__':
-    app.run(port=5000, host='0.0.0.0', debug=True)
+    port = int(os.environ.get("PORT", 5000))  # Use PORT from the environment or default to 5000
+    app.run(port=port, host='0.0.0.0', debug=True)
+
