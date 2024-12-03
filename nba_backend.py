@@ -87,7 +87,7 @@ def start_live_tracking():
         logging.error(f"Error starting live tracking: {str(e)}")
         return jsonify({"error": str(e)}), 500
         
-        def test_connectivity():
+def test_connectivity():
     try:
         response = requests.get("https://stats.nba.com", timeout=10)
         if response.status_code == 200:
