@@ -140,39 +140,60 @@ def get_flagged_rebounds():
         logging.error(f"Error fetching flagged rebounds: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
+
 # Function: Get today's games
 def get_today_games():
     try:
-        response = session.get('https://stats.nba.com')
-        if response.status_code == 429:  # Too many requests
-            logging.warning("Rate limited by the NBA API. Retrying after delay...")
-            time.sleep(60)  # Wait 1 minute before retrying
-            return []
-        
-        scoreboard = scoreboardv2.ScoreboardV2(day_offset=0)
-        games = scoreboard.get_data_frames()[0]
-        today_games = []
-        for _, game in games.iterrows():
-            game_id = game['GAME_ID']
-            home_team = game['HOME_TEAM_ID']
-            away_team = game['VISITOR_TEAM_ID']
-            game_status = game['GAME_STATUS_TEXT'].strip().lower()
+        # Updated base URL
+        base_url = "https://www.nba.com/stats/scoreboardv2"
 
-            game_data[game_id] = {
-                'home_team': home_team,
-                'away_team': away_team,
-                'status': 'live' if 'live' in game_status or 'qtr' in game_status else game_status,
-                'last_event': None,
-                'last_updated': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            }
-            today_games.append(game_id)
-        return today_games
+        # Headers to mimic a browser request
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+            'Referer': 'https://www.nba.com/',
+            'Accept': 'application/json, text/plain, */*',
+        }
+
+        # Test the URL and follow redirects
+        response = requests.get(base_url, headers=headers, allow_redirects=True, timeout=30)
+
+        # Log the response status and URL (for debugging purposes)
+        logging.info(f"Response Status Code: {response.status_code}, URL: {response.url}")
+
+        # Check for successful response
+        if response.status_code == 200:
+            scoreboard = scoreboardv2.ScoreboardV2(day_offset=0)
+            games = scoreboard.get_data_frames()[0]
+            today_games = []
+            for _, game in games.iterrows():
+                game_id = game['GAME_ID']
+                home_team = game['HOME_TEAM_ID']
+                away_team = game['VISITOR_TEAM_ID']
+                game_status = game['GAME_STATUS_TEXT'].strip().lower()
+
+                game_data[game_id] = {
+                    'home_team': home_team,
+                    'away_team': away_team,
+                    'status': 'live' if 'live' in game_status or 'qtr' in game_status else game_status,
+                    'last_event': None,
+                    'last_updated': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                }
+                today_games.append(game_id)
+            return today_games
+        else:
+            # Log the error if the response status is not OK
+            logging.error(f"Failed to retrieve today's games. Status code: {response.status_code}")
+            return []
+    except requests.exceptions.Timeout:
+        logging.error("Request timed out. Check network connectivity or API availability.")
+        return []
     except requests.exceptions.RequestException as e:
         logging.error(f"Request error: {str(e)}")
         return []
     except Exception as e:
         logging.error(f"Error retrieving today's games: {str(e)}")
         return []
+
 
 
 # Function: Track today's games
