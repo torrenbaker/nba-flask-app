@@ -86,6 +86,17 @@ def start_live_tracking():
     except Exception as e:
         logging.error(f"Error starting live tracking: {str(e)}")
         return jsonify({"error": str(e)}), 500
+        
+        def test_connectivity():
+    try:
+        response = requests.get("https://stats.nba.com", timeout=10)
+        if response.status_code == 200:
+            logging.info("Successfully connected to stats.nba.com")
+        else:
+            logging.error(f"Failed to connect to stats.nba.com. Status code: {response.status_code}")
+    except Exception as e:
+        logging.error(f"Connectivity test failed: {str(e)}")
+
 
 # Endpoint: Tracking status
 @app.route('/api/tracking-status', methods=['GET'])
