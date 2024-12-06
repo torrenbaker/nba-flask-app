@@ -68,15 +68,20 @@ def create_session():
     session.mount("https://", adapter)
     session.mount("http://", adapter)
     session.timeout = (10, 120)  # Timeout: 10s connect, 120s read
-    
+
     # Use ScraperAPI proxy
     scraper_api_url = f"http://api.scraperapi.com?api_key=5691e6d3b6b3751098287717895e7c0b"
     session.proxies = {
         "http": scraper_api_url,
         "https": scraper_api_url
+   
     }
     
+    # Add logging to confirm proxies
+    logging.info(f"Using proxy: {session.proxies}")
+    
     return session
+
 
 
 
@@ -173,6 +178,20 @@ def get_flagged_rebounds():
     except Exception as e:
         logging.error(f"Error fetching flagged rebounds: {str(e)}")
         return jsonify({"error": str(e)}), 500
+
+@app.route('/api/test-scraperapi', methods=['GET'])
+def test_scraperapi():
+    try:
+        proxy_url = "http://api.scraperapi.com?api_key=5691e6d3b6b3751098287717895e7c0b"
+        proxies = {"http": proxy_url, "https": proxy_url}
+        
+        # Test the connection to stats.nba.com through ScraperAPI
+        response = requests.get("https://stats.nba.com/stats/scoreboardv2", proxies=proxies, timeout=60)
+        return jsonify({"status_code": response.status_code, "response": response.text[:500]})  # Show part of the response
+    except Exception as e:
+        logging.error(f"ScraperAPI test failed: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
 
 @app.route('/api/test-connectivity', methods=['GET'])
 def test_connectivity_endpoint():
