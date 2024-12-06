@@ -56,24 +56,29 @@ TEAM_NAMES = {
 
 
 def create_session():
-    """Create a requests session with retries and timeouts."""
+    """Create a requests session with retries, timeouts, and ScraperAPI proxy."""
     retry = Retry(
-        total=5,  # Number of retries
-        backoff_factor=2,  # Wait 2^retry seconds between retries
-        allowed_methods=["GET", "POST"],  # Retry only on these methods
-        status_forcelist=[429, 500, 502, 503, 504]  # Retry on specific HTTP statuses
+        total=5,  # Retry up to 5 times
+        backoff_factor=2,  # Exponential backoff
+        allowed_methods=["GET", "POST"],
+        status_forcelist=[429, 500, 502, 503, 504]  # Retry on these status codes
     )
     adapter = HTTPAdapter(max_retries=retry)
     session = requests.Session()
     session.mount("https://", adapter)
     session.mount("http://", adapter)
-    session.timeout = (10, 120)  # Increased timeout for slow responses
+    session.timeout = (10, 120)  # Timeout: 10s connect, 120s read
+    
+    # Use ScraperAPI proxy
+    scraper_api_url = f"http://api.scraperapi.com?api_key=5691e6d3b6b3751098287717895e7c0b"
+    session.proxies = {
+        "http": scraper_api_url,
+        "https": scraper_api_url
+    }
+    
     return session
 
 
-
-
-session = create_session()
 
 def track_today_games():
     try:
