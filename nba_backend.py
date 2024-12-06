@@ -188,17 +188,28 @@ def get_today_games():
         
         # Measure the response time for the API call
         start_time = time.time()
-        scoreboard = scoreboardv2.ScoreboardV2(day_offset=0)
-        response_time = time.time() - start_time
-        logging.info(f"ScoreboardV2 API response time: {response_time:.2f} seconds")
-        
-        # Extract the game data from the returned DataFrame
-        games = scoreboard.get_data_frames()[0]
-        
-        if games.empty:
-            logging.info("No games found for today.")
+        try:
+            scoreboard = scoreboardv2.ScoreboardV2(day_offset=0)
+            response_time = time.time() - start_time
+            logging.info(f"ScoreboardV2 API response time: {response_time:.2f} seconds")
+        except Exception as e:
+            logging.error(f"Error during API request: {str(e)}")
             return []
 
+        # Extract the game data from the returned DataFrame
+        try:
+            games = scoreboard.get_data_frames()[0]
+            if games.empty:
+                logging.info("No games found for today.")
+                return []
+        except Exception as e:
+            logging.error(f"Error processing API response: {str(e)}")
+            return []
+
+        # Debugging API Response
+        logging.info(f"Number of games retrieved: {len(games)}")
+        logging.info(f"Sample of data: {games.head(3).to_dict(orient='records')}")  # Log a sample of the game data
+        
         today_games = []
         for _, game in games.iterrows():
             game_id = game['GAME_ID']
@@ -216,7 +227,7 @@ def get_today_games():
             }
             today_games.append(game_id)
 
-        logging.info(f"Retrieved {len(today_games)} games: {today_games}")
+        logging.info(f"Retrieved games: {today_games}")
         return today_games
 
     except Exception as e:
