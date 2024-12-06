@@ -58,17 +58,18 @@ TEAM_NAMES = {
 def create_session():
     """Create a requests session with retries and timeouts."""
     retry = Retry(
-        total=5,
-        backoff_factor=2,  # Wait longer between retries
-        allowed_methods=["GET", "POST"],
-        status_forcelist=[429, 500, 502, 503, 504]
+        total=5,  # Number of retries
+        backoff_factor=2,  # Wait 2^retry seconds between retries
+        allowed_methods=["GET", "POST"],  # Retry only on these methods
+        status_forcelist=[429, 500, 502, 503, 504]  # Retry on specific HTTP statuses
     )
     adapter = HTTPAdapter(max_retries=retry)
     session = requests.Session()
     session.mount("https://", adapter)
     session.mount("http://", adapter)
-    session.timeout = (10, 60)  # Connect timeout: 10s, Read timeout: 60s
+    session.timeout = (10, 120)  # Increased timeout for slow responses
     return session
+
 
 
 
@@ -164,14 +165,22 @@ def test_connectivity_endpoint():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
-# Function: Get today's games
 def get_today_games():
     try:
         logging.info("Retrieving today's games using nba_api library.")
         
-        # Call the ScoreboardV2 endpoint from nba_api
+        # Measure the response time for the API call
+        start_time = time.time()
         scoreboard = scoreboardv2.ScoreboardV2(day_offset=0)
-        games = scoreboard.get_data_frames()[0]  # DataFrame containing game info
+        response_time = time.time() - start_time
+        logging.info(f"ScoreboardV2 API response time: {response_time:.2f} seconds")
+        
+        # Extract the game data from the returned DataFrame
+        games = scoreboard.get_data_frames()[0]
+        
+        if games.empty:
+            logging.info("No games found for today.")
+            return []
 
         today_games = []
         for _, game in games.iterrows():
@@ -190,7 +199,7 @@ def get_today_games():
             }
             today_games.append(game_id)
 
-        logging.info(f"Retrieved games: {today_games}")
+        logging.info(f"Retrieved {len(today_games)} games: {today_games}")
         return today_games
 
     except Exception as e:
@@ -199,42 +208,36 @@ def get_today_games():
 
 
 
-
 # Function: Track today's games
-def track_today_games():
-    try:
-        today_games = get_today_games()
-        if not today_games:
-            logging.info("No games found for today.")
-            return
-        
-        logging.info(f"Tracking games: {today_games}")
-        while True:
-            active_games = [game_id for game_id in today_games if game_data[game_id]['status'].lower() == 'live']
-            for game_id in active_games:
-                process_game_events(game_id)
-                game_data[game_id]['last_updated'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            time.sleep(30)  # Poll every 30 seconds
-    except Exception as e:
-        logging.error(f"Error tracking games: {str(e)}")
-
-# Function: Process game events
 def process_game_events(game_id):
     try:
+        start_time = time.time()  # Start timing
+        logging.info(f"Processing game events for game_id: {game_id}")
+
+        # Fetch play-by-play data
         pbp = playbyplayv2.PlayByPlayV2(game_id=game_id)
         pbp_data = pbp.get_data_frames()[0]
-        last_processed_event = game_data[game_id]['last_event']
+        logging.info(f"Retrieved {len(pbp_data)} events for game_id: {game_id}")
+
+        last_processed_event = game_data[game_id].get('last_event')
 
         for index, row in pbp_data.iterrows():
             event_num = row['EVENTNUM']
-            if last_processed_event and event_num <= last_processed_event:
-                continue  # Skip already processed events
 
+            # Skip already processed events
+            if last_processed_event and event_num <= last_processed_event:
+                continue
+
+            # Update the last processed event
             game_data[game_id]['last_event'] = event_num
 
-            # Missed shot detection
+            # Detect missed shot leading to potential rebound
             if row['EVENTMSGTYPE'] == 2:  # Missed shot
-                for i in range(index + 1, index + 4):  # Check next 3 events
+                logging.debug(f"Missed shot detected at event {event_num} for game_id: {game_id}")
+
+                # Check subsequent events for rebounds
+                rebound_flagged = False
+                for i in range(index + 1, index + 4):  # Look at the next 3 events
                     if i < len(pbp_data):
                         next_event = pbp_data.iloc[i]
                         if next_event['EVENTMSGTYPE'] == 4:  # Rebound event
@@ -245,19 +248,24 @@ def process_game_events(game_id):
                                     "description": row['HOMEDESCRIPTION'] or row['VISITORDESCRIPTION'],
                                     "reason": "Potential misattribution: Team rebound instead of individual."
                                 })
-                                logging.info(f"Flagged team rebound for game {game_id} at {row['PCTIMESTRING']}")
-                            break
-                else:
-                    # No rebound event found
+                                logging.info(f"Flagged team rebound for game_id {game_id} at {row['PCTIMESTRING']}")
+                                rebound_flagged = True
+                                break
+                
+                # If no rebound is flagged within the next 3 events
+                if not rebound_flagged:
                     flagged_rebounds.setdefault(game_id, []).append({
                         "timestamp": row['PCTIMESTRING'],
                         "quarter": row['PERIOD'],
                         "description": row['HOMEDESCRIPTION'] or row['VISITORDESCRIPTION'],
                         "reason": "Potential missed rebound: No rebound credited."
                     })
-                    logging.info(f"Flagged missed rebound for game {game_id} at {row['PCTIMESTRING']}")
+                    logging.info(f"Flagged missed rebound for game_id {game_id} at {row['PCTIMESTRING']}")
+
+        logging.info(f"Finished processing game_id: {game_id} in {time.time() - start_time:.2f} seconds")
     except Exception as e:
-        logging.error(f"Error processing game {game_id}: {str(e)}")
+        logging.error(f"Error processing game_id {game_id}: {str(e)}")
+
 
 import os
 
