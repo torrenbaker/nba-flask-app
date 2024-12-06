@@ -70,7 +70,7 @@ def create_session():
     session.timeout = (10, 120)  # Timeout: 10s connect, 120s read
 
     # Use ScraperAPI proxy
-    scraper_api_url = f"http://api.scraperapi.com?api_key=5691e6d3b6b3751098287717895e7c0b"
+    scraper_api_url = f"http://api.scraperapi.com?api_key=5691e6d3b6b3751098287717895e7c0b&country_code=us"
     session.proxies = {
         "http": scraper_api_url,
         "https": scraper_api_url
