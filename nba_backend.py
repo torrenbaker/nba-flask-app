@@ -151,6 +151,18 @@ def get_flagged_rebounds():
         logging.error(f"Error fetching flagged rebounds: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
+@app.route('/api/test-connectivity', methods=['GET'])
+def test_connectivity_endpoint():
+    try:
+        # Check connectivity to stats.nba.com
+        response = session.get("https://stats.nba.com", timeout=10)
+        if response.status_code == 200:
+            return jsonify({"status": "success", "message": "Successfully connected to stats.nba.com"}), 200
+        else:
+            return jsonify({"status": "failure", "message": f"Unexpected status code: {response.status_code}"}), 500
+    except requests.exceptions.RequestException as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
 
 # Function: Get today's games
 def get_today_games():
