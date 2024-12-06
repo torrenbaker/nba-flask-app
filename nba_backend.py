@@ -75,6 +75,23 @@ def create_session():
 
 session = create_session()
 
+def track_today_games():
+    try:
+        today_games = get_today_games()
+        if not today_games:
+            logging.info("No games found for today.")
+            return
+        
+        logging.info(f"Tracking games: {today_games}")
+        while True:
+            active_games = [game_id for game_id in today_games if game_data[game_id]['status'].lower() == 'live']
+            for game_id in active_games:
+                process_game_events(game_id)
+                game_data[game_id]['last_updated'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            time.sleep(30)  # Poll every 30 seconds
+    except Exception as e:
+        logging.error(f"Error tracking games: {str(e)}")
+
 
 # Endpoint: Start live tracking
 @app.route('/api/start-live-tracking', methods=['GET'])
